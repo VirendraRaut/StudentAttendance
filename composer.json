@@ -1,0 +1,13 @@
+{
+    "name": "college/student-attendance-system",
+    "description": "Student Attendance Management System - Admin Only",
+    "type": "project",
+    "require": {
+        "php": ">=7.4",
+        "phpoffice/phpspreadsheet": "^1.29 || ^2.0",
+        "dompdf/dompdf": "^2.0 || ^3.0"
+    },
+    "config": {
+        "allow-plugins": {}
+    }
+}

@@ -1,0 +1,14 @@
+# Student Attendance Management System
+# Apache Configuration
+
+# Prevent directory indexing
+Options -Indexes
+
+# Set default charset
+AddDefaultCharset UTF-8
+
+# Protect sensitive files and directories
+<FilesMatch "(\.(sql|env|json|log)|composer\.(json|lock))$">
+    Order allow,deny
+    Deny from all
+</FilesMatch>

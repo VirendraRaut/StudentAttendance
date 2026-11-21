@@ -15,14 +15,6 @@ require_once __DIR__ . '/../includes/functions.php';
 
 require_admin_login();
 
-<!-- Page Header Block -->
-<div class="page-header-block">
-    <div>
-        <h2 class="page-title"><?= $pageTitle ?></h2>
-        <p class="page-subtitle">Manage teachers and their department assignments</p>
-    </div>
-</div>
-
 $action = $_GET['action'] ?? 'list';
 $editId = (int) ($_GET['id'] ?? 0);
 $editTeacher = null;

@@ -15,14 +15,6 @@ require_once __DIR__ . '/../includes/functions.php';
 
 require_admin_login();
 
-<!-- Page Header Block -->
-<div class="page-header-block">
-    <div>
-        <h2 class="page-title">Attendance Reports</h2>
-        <p class="page-subtitle">Generate detailed attendance analytics</p>
-    </div>
-</div>
-
 $departments = get_active_departments($pdo, false);
 
 // 1. Report Type Selection
@@ -377,6 +369,14 @@ $exportQs = http_build_query($exportParams);
 
 require_once __DIR__ . '/../includes/header.php';
 ?>
+
+<!-- Page Header Block -->
+<div class="page-header-block">
+    <div>
+        <h2 class="page-title">Attendance Reports &amp; Analytics</h2>
+        <p class="page-subtitle">Generate institutional daily, monthly, cohort, and subject-wise attendance analytics</p>
+    </div>
+</div>
 
 <!-- Report Type Tabs -->
 <div style="display: flex; gap: 8px; margin-bottom: 20px; overflow-x: auto; padding-bottom: 4px;">

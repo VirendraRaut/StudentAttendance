@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Section Management
+ * Section Management - Redesigned
  * Student Attendance Management System
  */
 
@@ -15,16 +15,24 @@ require_once __DIR__ . '/../includes/functions.php';
 
 require_admin_login();
 
+<!-- Page Header Block -->
+<div class="page-header-block">
+    <div>
+        <h2 class="page-title"><?= $pageTitle ?></h2>
+        <p class="page-subtitle">Manage sections and assign to departments</p>
+    </div>
+</div>
+
 $action = $_GET['action'] ?? 'list';
 $editId = (int) ($_GET['id'] ?? 0);
 $editSection = null;
+$showForm = ($action === 'add' || $action === 'edit');
 
 // Search & Filter
 $search = trim($_GET['search'] ?? '');
 $deptFilter = (int) ($_GET['department_id'] ?? 0);
 $statusFilter = trim($_GET['status'] ?? '');
 
-// Active departments for dropdown
 $departments = get_active_departments($pdo, false);
 
 // Handle POST: Add or Update
@@ -41,10 +49,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $desc    = trim($_POST['description'] ?? '');
     $status  = $_POST['status'] ?? 'Active';
 
-    // Validation
     if ($deptId <= 0 || empty($secName)) {
         set_flash('danger', 'Please select a department and enter a section name.');
-        redirect($secId > 0 ? "admin/sections.php?action=edit&id={$secId}" : "admin/sections.php");
+        redirect($secId > 0 ? "admin/sections.php?action=edit&id={$secId}" : "admin/sections.php?action=add");
     }
 
     if (!in_array($status, ['Active', 'Inactive'])) {
@@ -53,7 +60,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     try {
         if ($secId > 0) {
-            // Check duplicate section in same department
             $checkStmt = $pdo->prepare(
                 "SELECT id FROM sections 
                  WHERE department_id = :dept_id AND section_name = :name AND id != :id 
@@ -65,7 +71,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 redirect("admin/sections.php?action=edit&id={$secId}");
             }
 
-            // Update
             $updateStmt = $pdo->prepare(
                 "UPDATE sections 
                  SET department_id = :dept_id, section_name = :name, description = :desc, status = :status 
@@ -81,7 +86,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             set_flash('success', "Section '{$secName}' updated successfully.");
 
         } else {
-            // Check duplicate
             $checkStmt = $pdo->prepare(
                 "SELECT id FROM sections 
                  WHERE department_id = :dept_id AND section_name = :name 
@@ -90,10 +94,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $checkStmt->execute([':dept_id' => $deptId, ':name' => $secName]);
             if ($checkStmt->fetch()) {
                 set_flash('danger', "Section '{$secName}' already exists in this department.");
-                redirect("admin/sections.php");
+                redirect("admin/sections.php?action=add");
             }
 
-            // Insert
             $insertStmt = $pdo->prepare(
                 "INSERT INTO sections (department_id, section_name, description, status) 
                  VALUES (:dept_id, :name, :desc, :status)"
@@ -111,7 +114,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     } catch (PDOException $e) {
         error_log("Section save error: " . $e->getMessage());
-        set_flash('danger', 'Database error occurred while saving the section.');
+        set_flash('danger', 'Database error occurred while saving section.');
         redirect('admin/sections.php');
     }
 }
@@ -119,23 +122,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // Handle GET: Delete
 if ($action === 'delete' && $editId > 0) {
     try {
-        // Safe check for students
         $chkStu = $pdo->prepare("SELECT COUNT(*) FROM students WHERE section_id = :id");
         $chkStu->execute([':id' => $editId]);
         $hasStudents = (int) $chkStu->fetchColumn();
 
-        // Safe check for teacher_subjects
         $chkTea = $pdo->prepare("SELECT COUNT(*) FROM teacher_subjects WHERE section_id = :id");
         $chkTea->execute([':id' => $editId]);
         $hasTeacherAssignments = (int) $chkTea->fetchColumn();
 
         if ($hasStudents > 0 || $hasTeacherAssignments > 0) {
-            $msg = "Cannot delete this section because it is currently assigned to: ";
             $deps = [];
             if ($hasStudents > 0) $deps[] = "{$hasStudents} student(s)";
             if ($hasTeacherAssignments > 0) $deps[] = "{$hasTeacherAssignments} teacher-subject assignment(s)";
-            $msg .= implode(' and ', $deps) . ". Please reassign these records first.";
-            set_flash('danger', $msg);
+            set_flash('danger', "Cannot delete section: Linked to " . implode(' and ', $deps) . ". Reassign records first.");
         } else {
             $delStmt = $pdo->prepare("DELETE FROM sections WHERE id = :id");
             $delStmt->execute([':id' => $editId]);
@@ -144,7 +143,7 @@ if ($action === 'delete' && $editId > 0) {
 
     } catch (PDOException $e) {
         error_log("Section delete error: " . $e->getMessage());
-        set_flash('danger', 'Unable to delete section due to existing database relationships.');
+        set_flash('danger', 'Cannot delete section due to database relationships.');
     }
     redirect('admin/sections.php');
 }
@@ -207,194 +206,217 @@ $sections = $listStmt->fetchAll();
 require_once __DIR__ . '/../includes/header.php';
 ?>
 
-<div style="display: grid; grid-template-columns: <?= $editSection ? '1fr' : '360px 1fr' ?>; gap: 24px; align-items: start;">
-    
-    <!-- Add / Edit Section Card -->
-    <div class="card">
+<!-- 1. Page Header Block -->
+<div class="page-header-block">
+    <div>
+        <h2 class="page-title">Sections</h2>
+        <p class="page-subtitle">Manage class divisions and classroom cohorts within academic departments</p>
+    </div>
+    <div class="page-header-actions">
+        <?php if (!$showForm): ?>
+            <a href="sections.php?action=add" class="btn btn-primary">
+                ➕ Add Section
+            </a>
+        <?php endif; ?>
+    </div>
+</div>
+
+<!-- 2. Add / Edit Form Card -->
+<?php if ($showForm): ?>
+    <div class="card" style="border-left: 4px solid var(--primary); margin-bottom: 24px;">
         <div class="card-header">
             <div>
-                <h3 class="card-title"><?= $editSection ? 'Edit Section' : 'Add New Section' ?></h3>
-                <div class="card-subtitle"><?= $editSection ? 'Modify section details' : 'Register a new class section' ?></div>
+                <h3 class="card-title"><?= $editSection ? 'Edit Section' : 'Add New Class Section' ?></h3>
+                <div class="card-subtitle"><?= $editSection ? 'Modify section title, department, or status' : 'Assign section name to an academic department' ?></div>
             </div>
-            <?php if ($editSection): ?>
-                <a href="sections.php" class="btn btn-sm btn-outline">Cancel</a>
-            <?php endif; ?>
+            <a href="sections.php" class="btn btn-sm btn-outline">✕ Cancel</a>
         </div>
         <div class="card-body">
             <form method="POST" action="sections.php" autocomplete="off">
                 <?= csrf_input() ?>
                 <input type="hidden" name="section_id" value="<?= $editSection['id'] ?? 0 ?>">
 
-                <div class="form-group">
-                    <label class="form-label" for="department_id">Department <span class="required">*</span></label>
-                    <select id="department_id" name="department_id" class="form-select" required>
-                        <option value="">-- Select Department --</option>
-                        <?php foreach ($departments as $dept): ?>
-                            <option value="<?= $dept['id'] ?>" <?= ($editSection['department_id'] ?? $deptFilter) == $dept['id'] ? 'selected' : '' ?>>
-                                <?= escape($dept['department_name']) ?> (<?= escape($dept['department_code']) ?>)
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
+                <div class="form-grid-3">
+                    <div class="form-group">
+                        <label class="form-label" for="department_id">Department <span class="required">*</span></label>
+                        <select id="department_id" name="department_id" class="form-select" required>
+                            <option value="">-- Select Department --</option>
+                            <?php foreach ($departments as $dept): ?>
+                                <option value="<?= $dept['id'] ?>" <?= ($editSection['department_id'] ?? $deptFilter) == $dept['id'] ? 'selected' : '' ?>>
+                                    <?= escape($dept['department_name']) ?> (<?= escape($dept['department_code']) ?>)
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="section_name">Section Name <span class="required">*</span></label>
+                        <input 
+                            type="text" 
+                            id="section_name" 
+                            name="section_name" 
+                            class="form-control" 
+                            placeholder="e.g. CS-A, Year 1 Section B" 
+                            maxlength="100" 
+                            required 
+                            value="<?= escape($editSection['section_name'] ?? '') ?>"
+                        >
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="status">Status</label>
+                        <select id="status" name="status" class="form-select">
+                            <option value="Active" <?= ($editSection['status'] ?? 'Active') === 'Active' ? 'selected' : '' ?>>Active</option>
+                            <option value="Inactive" <?= ($editSection['status'] ?? '') === 'Inactive' ? 'selected' : '' ?>>Inactive</option>
+                        </select>
+                    </div>
                 </div>
 
-                <div class="form-group">
-                    <label class="form-label" for="section_name">Section Name <span class="required">*</span></label>
-                    <input 
-                        type="text" 
-                        id="section_name" 
-                        name="section_name" 
-                        class="form-control" 
-                        placeholder="e.g. Section A, Year 1 - CS-A" 
-                        maxlength="100" 
-                        required 
-                        value="<?= escape($editSection['section_name'] ?? '') ?>"
-                    >
-                </div>
-
-                <div class="form-group">
-                    <label class="form-label" for="description">Description</label>
+                <div class="form-group" style="margin-bottom: 20px;">
+                    <label class="form-label" for="description">Description / Classroom Location</label>
                     <textarea 
                         id="description" 
                         name="description" 
                         class="form-control" 
-                        placeholder="Optional section notes..."
+                        placeholder="Optional details such as classroom block, batch year, or schedule notes..."
                     ><?= escape($editSection['description'] ?? '') ?></textarea>
                 </div>
 
-                <div class="form-group">
-                    <label class="form-label" for="status">Status</label>
-                    <select id="status" name="status" class="form-select">
-                        <option value="Active" <?= ($editSection['status'] ?? 'Active') === 'Active' ? 'selected' : '' ?>>Active</option>
-                        <option value="Inactive" <?= ($editSection['status'] ?? '') === 'Inactive' ? 'selected' : '' ?>>Inactive</option>
-                    </select>
+                <div style="display: flex; gap: 10px;">
+                    <button type="submit" class="btn btn-primary">
+                        <?= $editSection ? 'Save Changes' : 'Create Section' ?>
+                    </button>
+                    <a href="sections.php" class="btn btn-secondary">Cancel</a>
                 </div>
-
-                <button type="submit" class="btn btn-primary" style="width: 100%;">
-                    <?= $editSection ? 'Update Section' : 'Save Section' ?>
-                </button>
             </form>
         </div>
     </div>
+<?php endif; ?>
 
-    <!-- Sections List Card -->
-    <div class="card">
-        <div class="card-header">
-            <div>
-                <h3 class="card-title">All Sections (<?= number_format($totalRows) ?>)</h3>
-                <div class="card-subtitle">Organized by departmental divisions</div>
-            </div>
+<!-- 3. Filter & Search Toolbar -->
+<div class="filter-toolbar">
+    <form method="GET" action="sections.php">
+        <input 
+            type="text" 
+            name="search" 
+            class="form-control" 
+            placeholder="Search section or department..." 
+            value="<?= escape($search) ?>" 
+            style="max-width: 260px;"
+        >
+        <select name="department_id" class="form-select" style="max-width: 220px;">
+            <option value="">All Departments</option>
+            <?php foreach ($departments as $dept): ?>
+                <option value="<?= $dept['id'] ?>" <?= $deptFilter == $dept['id'] ? 'selected' : '' ?>>
+                    <?= escape($dept['department_code']) ?> - <?= escape($dept['department_name']) ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
+        <select name="status" class="form-select" style="max-width: 150px;">
+            <option value="">All Statuses</option>
+            <option value="Active" <?= $statusFilter === 'Active' ? 'selected' : '' ?>>Active Only</option>
+            <option value="Inactive" <?= $statusFilter === 'Inactive' ? 'selected' : '' ?>>Inactive Only</option>
+        </select>
+        <button type="submit" class="btn btn-secondary">Filter</button>
+        <?php if (!empty($search) || $deptFilter > 0 || !empty($statusFilter)): ?>
+            <a href="sections.php" class="btn btn-outline">Reset</a>
+        <?php endif; ?>
+
+        <div style="margin-left: auto; font-size: 12.5px; color: var(--text-muted);">
+            Total: <strong><?= number_format($totalRows) ?></strong> section<?= $totalRows === 1 ? '' : 's' ?>
         </div>
+    </form>
+</div>
 
-        <!-- Filter / Search Toolbar -->
-        <div style="padding: 16px 24px; border-bottom: 1px solid var(--border-color); background: #fafbfd;">
-            <form method="GET" action="sections.php" class="filter-actions" style="margin: 0; display: flex; gap: 12px; flex-wrap: wrap;">
-                <input 
-                    type="text" 
-                    name="search" 
-                    class="form-control" 
-                    placeholder="Search section or department..." 
-                    value="<?= escape($search) ?>" 
-                    style="max-width: 240px;"
-                >
-                <select name="department_id" class="form-select" style="max-width: 200px;">
-                    <option value="">All Departments</option>
-                    <?php foreach ($departments as $dept): ?>
-                        <option value="<?= $dept['id'] ?>" <?= $deptFilter == $dept['id'] ? 'selected' : '' ?>>
-                            <?= escape($dept['department_code']) ?>
-                        </option>
-                    <?php endforeach; ?>
-                </select>
-                <select name="status" class="form-select" style="max-width: 140px;">
-                    <option value="">All Statuses</option>
-                    <option value="Active" <?= $statusFilter === 'Active' ? 'selected' : '' ?>>Active</option>
-                    <option value="Inactive" <?= $statusFilter === 'Inactive' ? 'selected' : '' ?>>Inactive</option>
-                </select>
-                <button type="submit" class="btn btn-secondary">Filter</button>
-                <?php if (!empty($search) || $deptFilter > 0 || !empty($statusFilter)): ?>
-                    <a href="sections.php" class="btn btn-outline">Reset</a>
-                <?php endif; ?>
-            </form>
-        </div>
-
-        <div class="card-body" style="padding: 0;">
-            <div class="table-responsive">
-                <table class="table">
-                    <thead>
+<!-- 4. Data Table Card -->
+<div class="card">
+    <div class="card-body" style="padding: 0;">
+        <div class="table-responsive">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Section Name</th>
+                        <th>Department</th>
+                        <th style="width: 130px;" class="text-center">Enrolled Students</th>
+                        <th style="width: 100px;" class="text-center">Status</th>
+                        <th style="width: 140px;" class="text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if (empty($sections)): ?>
                         <tr>
-                            <th>Section Name</th>
-                            <th>Department</th>
-                            <th>Enrolled Students</th>
-                            <th>Status</th>
-                            <th style="text-align: right;">Actions</th>
+                            <td colspan="5">
+                                <div class="empty-state">
+                                    <div class="empty-state-icon">📑</div>
+                                    <div class="empty-state-title">No Sections Found</div>
+                                    <div class="empty-state-text">No class sections match your filter criteria, or none have been created yet.</div>
+                                    <a href="sections.php?action=add" class="btn btn-primary btn-sm">➕ Create Section</a>
+                                </div>
+                            </td>
                         </tr>
-                    </thead>
-                    <tbody>
-                        <?php if (empty($sections)): ?>
+                    <?php else: ?>
+                        <?php foreach ($sections as $sec): ?>
                             <tr>
-                                <td colspan="5">
-                                    <div class="empty-state">
-                                        <div class="empty-state-icon">📑</div>
-                                        <div class="empty-state-title">No Sections Found</div>
-                                        <div class="empty-state-text">Create sections to start assigning students and classes.</div>
-                                    </div>
+                                <td>
+                                    <strong><?= escape($sec['section_name']) ?></strong>
+                                    <?php if (!empty($sec['description'])): ?>
+                                        <div style="font-size: 11px; color: var(--text-muted); max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                            <?= escape($sec['description']) ?>
+                                        </div>
+                                    <?php endif; ?>
                                 </td>
-                            </tr>
-                        <?php else: ?>
-                            <?php foreach ($sections as $sec): ?>
-                                <tr>
-                                    <td>
-                                        <strong><?= escape($sec['section_name']) ?></strong>
-                                        <?php if (!empty($sec['description'])): ?>
-                                            <div style="font-size: 11px; color: var(--text-muted);"><?= escape($sec['description']) ?></div>
-                                        <?php endif; ?>
-                                    </td>
-                                    <td>
-                                        <span class="badge badge-secondary"><?= escape($sec['department_code']) ?></span>
-                                        <span style="font-size: 12.5px; margin-left: 4px;"><?= escape($sec['department_name']) ?></span>
-                                    </td>
-                                    <td><span class="badge badge-info"><?= number_format($sec['student_count']) ?> students</span></td>
-                                    <td><?= render_status_badge($sec['status']) ?></td>
-                                    <td style="text-align: right; white-space: nowrap;">
-                                        <a href="sections.php?action=edit&id=<?= $sec['id'] ?>" class="btn btn-sm btn-outline">
+                                <td>
+                                    <span class="badge badge-secondary"><?= escape($sec['department_code']) ?></span>
+                                    <span style="font-size: 12px; margin-left: 4px; color: var(--text-muted);"><?= escape($sec['department_name']) ?></span>
+                                </td>
+                                <td class="text-center">
+                                    <span class="badge badge-info"><?= number_format($sec['student_count']) ?> students</span>
+                                </td>
+                                <td class="text-center"><?= render_status_badge($sec['status']) ?></td>
+                                <td class="text-right">
+                                    <div class="table-actions">
+                                        <a href="sections.php?action=edit&id=<?= $sec['id'] ?>" class="btn btn-sm btn-outline" title="Edit Section">
                                             ✏️ Edit
                                         </a>
                                         <button 
                                             type="button" 
                                             class="btn btn-sm btn-outline-danger" 
                                             onclick="confirmDelete('sections.php?action=delete&id=<?= $sec['id'] ?>', 'section <?= escape($sec['section_name']) ?>')"
+                                            title="Delete Section"
                                         >
                                             🗑️ Delete
                                         </button>
-                                    </td>
-                                </tr>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
-                    </tbody>
-                </table>
-            </div>
+                                    </div>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </tbody>
+            </table>
         </div>
-
-        <?php if ($totalPages > 1): ?>
-            <div class="card-footer">
-                <div style="font-size: 12px; color: var(--text-muted);">
-                    Showing <?= $offset + 1 ?> to <?= min($offset + $limit, $totalRows) ?> of <?= $totalRows ?> sections
-                </div>
-                <ul class="pagination">
-                    <li class="page-item <?= $page <= 1 ? 'disabled' : '' ?>">
-                        <a class="page-link" href="?p=<?= $page - 1 ?>&search=<?= urlencode($search) ?>&department_id=<?= $deptFilter ?>&status=<?= urlencode($statusFilter) ?>">Prev</a>
-                    </li>
-                    <?php for ($i = 1; $i <= $totalPages; $i++): ?>
-                        <li class="page-item <?= $i === $page ? 'active' : '' ?>">
-                            <a class="page-link" href="?p=<?= $i ?>&search=<?= urlencode($search) ?>&department_id=<?= $deptFilter ?>&status=<?= urlencode($statusFilter) ?>"><?= $i ?></a>
-                        </li>
-                    <?php endfor; ?>
-                    <li class="page-item <?= $page >= $totalPages ? 'disabled' : '' ?>">
-                        <a class="page-link" href="?p=<?= $page + 1 ?>&search=<?= urlencode($search) ?>&department_id=<?= $deptFilter ?>&status=<?= urlencode($statusFilter) ?>">Next</a>
-                    </li>
-                </ul>
-            </div>
-        <?php endif; ?>
     </div>
+
+    <!-- 5. Pagination Footer -->
+    <?php if ($totalPages > 1): ?>
+        <div class="card-footer">
+            <div style="font-size: 12.5px; color: var(--text-muted);">
+                Showing <?= $offset + 1 ?> to <?= min($offset + $limit, $totalRows) ?> of <?= $totalRows ?> sections
+            </div>
+            <ul class="pagination">
+                <li class="page-item <?= $page <= 1 ? 'disabled' : '' ?>">
+                    <a class="page-link" href="?p=<?= $page - 1 ?>&search=<?= urlencode($search) ?>&department_id=<?= $deptFilter ?>&status=<?= urlencode($statusFilter) ?>">Prev</a>
+                </li>
+                <?php for ($i = 1; $i <= $totalPages; $i++): ?>
+                    <li class="page-item <?= $i === $page ? 'active' : '' ?>">
+                        <a class="page-link" href="?p=<?= $i ?>&search=<?= urlencode($search) ?>&department_id=<?= $deptFilter ?>&status=<?= urlencode($statusFilter) ?>"><?= $i ?></a>
+                    </li>
+                <?php endfor; ?>
+                <li class="page-item <?= $page >= $totalPages ? 'disabled' : '' ?>">
+                    <a class="page-link" href="?p=<?= $page + 1 ?>&search=<?= urlencode($search) ?>&department_id=<?= $deptFilter ?>&status=<?= urlencode($statusFilter) ?>">Next</a>
+                </li>
+            </ul>
+        </div>
+    <?php endif; ?>
 </div>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>

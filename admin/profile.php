@@ -127,6 +127,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_password'])) {
 require_once __DIR__ . '/../includes/header.php';
 ?>
 
+<!-- Page Header Block -->
+<div class="page-header-block">
+    <h1 class="page-title">Admin Profile</h1>
+    <p class="page-subtitle">Manage your account details and password.</p>
+</div>
 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start;">
     
     <!-- Account Information & Profile Edit -->

@@ -15,6 +15,14 @@ require_once __DIR__ . '/../includes/functions.php';
 
 require_admin_login();
 
+<!-- Page Header Block -->
+<div class="page-header-block">
+    <div>
+        <h2 class="page-title">Attendance Reports</h2>
+        <p class="page-subtitle">Generate detailed attendance analytics</p>
+    </div>
+</div>
+
 $departments = get_active_departments($pdo, false);
 
 // 1. Report Type Selection

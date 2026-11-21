@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Attendance Management - Mark Attendance
+ * Attendance Roll-Call Marking - Redesigned
  * Student Attendance Management System
  */
 
@@ -15,6 +15,14 @@ require_once __DIR__ . '/../includes/functions.php';
 
 require_admin_login();
 
+<!-- Page Header Block -->
+<div class="page-header-block">
+    <div>
+        <h2 class="page-title"><?= $pageTitle ?></h2>
+        <p class="page-subtitle">Record daily attendance for students</p>
+    </div>
+</div>
+
 $departments = get_active_departments($pdo, true);
 
 // Parameters for sheet selection
@@ -27,7 +35,6 @@ $sections = [];
 $subjects = [];
 $eligibleStudents = [];
 $alreadyRecorded = false;
-$existingRecords = [];
 
 if ($selectedDept > 0) {
     $sections = get_sections_by_department($pdo, $selectedDept, true);
@@ -36,7 +43,6 @@ if ($selectedDept > 0) {
 
 // Fetch Eligible Students and Existing Attendance
 if ($selectedDept > 0 && $selectedSec > 0 && $selectedSub > 0 && !empty($selectedDate)) {
-    // 1. Check department consistency
     $vDept = $pdo->prepare("SELECT id FROM sections WHERE id = :sec_id AND department_id = :dept_id");
     $vDept->execute([':sec_id' => $selectedSec, ':dept_id' => $selectedDept]);
     $validSec = $vDept->fetch();
@@ -46,7 +52,6 @@ if ($selectedDept > 0 && $selectedSec > 0 && $selectedSub > 0 && !empty($selecte
     $validSub = $vSub->fetch();
 
     if ($validSec && $validSub) {
-        // 2. Fetch active students who are enrolled in this subject and belong to this section
         $studentStmt = $pdo->prepare(
             "SELECT 
                 s.id AS student_id,
@@ -74,7 +79,6 @@ if ($selectedDept > 0 && $selectedSec > 0 && $selectedSub > 0 && !empty($selecte
         ]);
         $eligibleStudents = $studentStmt->fetchAll();
 
-        // Check if attendance has already been recorded for this date and subject
         foreach ($eligibleStudents as $row) {
             if (!empty($row['attendance_id'])) {
                 $alreadyRecorded = true;
@@ -96,12 +100,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $postDept      = (int) ($_POST['department_id'] ?? 0);
     $postSec       = (int) ($_POST['section_id'] ?? 0);
     $postSub       = (int) ($_POST['subject_id'] ?? 0);
-    $attendanceArr = $_POST['attendance'] ?? []; // Array: [student_id => 'Present'|'Absent']
-    $remarksArr    = $_POST['remarks'] ?? [];    // Array: [student_id => string]
+    $attendanceArr = $_POST['attendance'] ?? [];
+    $remarksArr    = $_POST['remarks'] ?? [];
 
-    // Basic Validations
     if (empty($postDate) || $postDept <= 0 || $postSec <= 0 || $postSub <= 0) {
-        set_flash('danger', 'Invalid session parameters. Please ensure date, department, section, and subject are selected.');
+        set_flash('danger', 'Invalid parameters. Please select date, department, section, and subject.');
         redirect("admin/attendance.php");
     }
 
@@ -113,13 +116,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $adminId = (int) ($_SESSION['admin_id'] ?? 0);
 
     try {
-        // Use Database Transaction
         $pdo->beginTransaction();
 
         $savedPresent = 0;
         $savedAbsent  = 0;
 
-        // Upsert attendance statement
         $upsertStmt = $pdo->prepare(
             "INSERT INTO attendance 
              (student_id, subject_id, attendance_date, attendance_status, remarks, marked_by) 
@@ -132,7 +133,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                  updated_at = CURRENT_TIMESTAMP"
         );
 
-        // Verification statement: ensure each student is genuinely active and assigned to subject
         $verifyAssignment = $pdo->prepare(
             "SELECT ss.id 
              FROM student_subjects ss 
@@ -147,14 +147,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $status = in_array($rawStatus, ['Present', 'Absent']) ? $rawStatus : 'Absent';
             $remarks = trim($remarksArr[$studentId] ?? '');
 
-            // Verify active enrollment
             $verifyAssignment->execute([':stu_id' => $studentId, ':sub_id' => $postSub]);
             if (!$verifyAssignment->fetch()) {
-                // Skip if not actively assigned
                 continue;
             }
 
-            // Execute upsert
             $upsertStmt->execute([
                 ':student_id' => $studentId,
                 ':subject_id' => $postSub,
@@ -171,7 +168,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-        // Commit transaction
         $pdo->commit();
 
         $totalSaved = $savedPresent + $savedAbsent;
@@ -183,8 +179,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($pdo->inTransaction()) {
             $pdo->rollBack();
         }
-        error_log("Attendance save transaction error: " . $e->getMessage());
-        set_flash('danger', 'A database error occurred while saving attendance. Transaction was safely aborted.');
+        error_log("Attendance save error: " . $e->getMessage());
+        set_flash('danger', 'Database error occurred while saving attendance.');
         redirect("admin/attendance.php?date={$postDate}&department_id={$postDept}&section_id={$postSec}&subject_id={$postSub}");
     }
 }
@@ -193,19 +189,29 @@ $extraScripts = '<script src="' . BASE_URL . '/assets/js/attendance.js"></script
 require_once __DIR__ . '/../includes/header.php';
 ?>
 
-<!-- Filter & Selection Bar -->
-<div class="card" style="margin-bottom: 24px;">
-    <div class="card-header">
-        <div>
-            <h3 class="card-title">Select Attendance Session</h3>
-            <div class="card-subtitle">Choose the date, department, section, and subject to record attendance</div>
-        </div>
+<!-- 1. Page Header Block -->
+<div class="page-header-block">
+    <div>
+        <h2 class="page-title">Mark Roll-Call Attendance</h2>
+        <p class="page-subtitle">Select date and class cohort to record daily student attendance</p>
     </div>
-    <div class="card-body">
+    <div class="page-header-actions">
+        <a href="attendance-history.php" class="btn btn-outline">
+            🕒 Attendance History Log
+        </a>
+    </div>
+</div>
+
+<!-- 2. Session Selector Toolbar Card -->
+<div class="card" style="margin-bottom: 20px;">
+    <div class="card-header" style="background: #ffffff;">
+        <h3 class="card-title" style="font-size: 14px;">Select Course & Class Session</h3>
+    </div>
+    <div class="card-body" style="padding: 16px 20px;">
         <form method="GET" action="attendance.php" id="sessionForm">
-            <div class="form-row-4">
-                <div class="form-group">
-                    <label class="form-label" for="date">Attendance Date <span class="required">*</span></label>
+            <div class="form-grid-4">
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label class="form-label" for="date">Date <span class="required">*</span></label>
                     <input 
                         type="date" 
                         id="date" 
@@ -217,7 +223,7 @@ require_once __DIR__ . '/../includes/header.php';
                     >
                 </div>
 
-                <div class="form-group">
+                <div class="form-group" style="margin-bottom: 0;">
                     <label class="form-label" for="department_select">Department <span class="required">*</span></label>
                     <select id="department_select" name="department_id" class="form-select" required>
                         <option value="">-- Select Department --</option>
@@ -229,7 +235,7 @@ require_once __DIR__ . '/../includes/header.php';
                     </select>
                 </div>
 
-                <div class="form-group">
+                <div class="form-group" style="margin-bottom: 0;">
                     <label class="form-label" for="section_select">Section <span class="required">*</span></label>
                     <select id="section_select" name="section_id" class="form-select" required>
                         <option value="">-- Select Section --</option>
@@ -241,7 +247,7 @@ require_once __DIR__ . '/../includes/header.php';
                     </select>
                 </div>
 
-                <div class="form-group">
+                <div class="form-group" style="margin-bottom: 0;">
                     <label class="form-label" for="subject_select">Subject <span class="required">*</span></label>
                     <select id="subject_select" name="subject_id" class="form-select" required>
                         <option value="">-- Select Subject --</option>
@@ -254,11 +260,13 @@ require_once __DIR__ . '/../includes/header.php';
                 </div>
             </div>
 
-            <div style="display: flex; gap: 12px; margin-top: 6px;">
+            <div style="display: flex; gap: 10px; margin-top: 16px;">
                 <button type="submit" class="btn btn-primary">
                     🔍 Load Eligible Students
                 </button>
-                <a href="attendance.php" class="btn btn-outline">Reset</a>
+                <?php if ($selectedDept > 0 || $selectedSec > 0 || $selectedSub > 0): ?>
+                    <a href="attendance.php" class="btn btn-outline">Reset Selection</a>
+                <?php endif; ?>
             </div>
         </form>
     </div>
@@ -269,7 +277,7 @@ require_once __DIR__ . '/../includes/header.php';
     <?php if ($alreadyRecorded): ?>
         <div class="alert alert-info">
             <span>
-                ℹ️ <strong>Previously Recorded:</strong> Attendance for this subject on <strong><?= format_date($selectedDate) ?></strong> has already been saved. Existing marks are displayed below and can be updated.
+                ℹ️ <strong>Previously Recorded Session:</strong> Attendance for this subject on <strong><?= format_date($selectedDate) ?></strong> is already saved. You are in <strong>update mode</strong>. Modify values below and click Save.
             </span>
         </div>
     <?php endif; ?>
@@ -279,18 +287,18 @@ require_once __DIR__ . '/../includes/header.php';
             <div class="card-body">
                 <div class="empty-state">
                     <div class="empty-state-icon">⚠️</div>
-                    <div class="empty-state-title">No Eligible Students Found</div>
+                    <div class="empty-state-title">No Enrolled Students Found</div>
                     <div class="empty-state-text">
-                        There are no active students in this department & section assigned to the selected subject.
+                        There are no active students in this cohort enrolled in the selected subject.
                         <br>
-                        Please visit <a href="student-subjects.php" style="font-weight: 700; text-decoration: underline;">Student-Subject Assignments</a> to enroll students into this course.
+                        Visit <a href="student-subjects.php" style="font-weight: 700; text-decoration: underline;">Student Course Enrollments</a> to enroll students first.
                     </div>
                 </div>
             </div>
         </div>
     <?php else: ?>
 
-        <!-- Attendance Marking Sheet -->
+        <!-- Attendance Marking Sheet Form -->
         <form method="POST" action="attendance.php" id="attendanceForm">
             <?= csrf_input() ?>
             <input type="hidden" name="attendance_date" value="<?= escape($selectedDate) ?>">
@@ -298,10 +306,10 @@ require_once __DIR__ . '/../includes/header.php';
             <input type="hidden" name="section_id" value="<?= $selectedSec ?>">
             <input type="hidden" name="subject_id" value="<?= $selectedSub ?>">
 
-            <!-- Live Summary Counter & Bulk Action Controls -->
+            <!-- Live Summary Counter & Bulk Quick Actions -->
             <div class="attendance-summary-bar">
                 <div class="summary-pill">
-                    <span>Total Students:</span>
+                    <span>Eligible Students:</span>
                     <span class="summary-pill-num badge badge-secondary" id="count_total"><?= count($eligibleStudents) ?></span>
                 </div>
                 <div class="summary-pill">
@@ -313,17 +321,17 @@ require_once __DIR__ . '/../includes/header.php';
                     <span class="summary-pill-num badge badge-danger" id="count_absent">0</span>
                 </div>
                 <div class="summary-pill">
-                    <span>Attendance Rate:</span>
+                    <span>Session Rate:</span>
                     <span class="summary-pill-num badge badge-info" id="count_percentage">0.0%</span>
                 </div>
 
-                <div style="margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap;">
+                <div style="margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                     <input 
                         type="text" 
                         id="student_search_input" 
                         class="form-control" 
-                        placeholder="Search student or roll in list..." 
-                        style="width: 200px; padding: 6px 12px; font-size: 12.5px;"
+                        placeholder="Filter student in list..." 
+                        style="width: 180px; height: 34px; font-size: 12px;"
                     >
                     <button type="button" class="btn btn-sm btn-success" id="markAllPresentBtn">
                         ✅ Mark All Present
@@ -337,8 +345,8 @@ require_once __DIR__ . '/../includes/header.php';
             <div class="card">
                 <div class="card-header">
                     <div>
-                        <h3 class="card-title">Class Roll Call Sheet</h3>
-                        <div class="card-subtitle"><?= count($eligibleStudents) ?> students eligible for attendance</div>
+                        <h3 class="card-title">Roll-Call Attendance Sheet</h3>
+                        <div class="card-subtitle"><?= count($eligibleStudents) ?> students registered for this course</div>
                     </div>
                 </div>
                 <div class="card-body" style="padding: 0;">
@@ -347,31 +355,34 @@ require_once __DIR__ . '/../includes/header.php';
                             <thead>
                                 <tr>
                                     <th style="width: 80px;">Roll No</th>
-                                    <th>Student Code</th>
-                                    <th>Student Name</th>
-                                    <th>Gender</th>
-                                    <th style="width: 220px; text-align: center;">Attendance Status</th>
-                                    <th style="width: 260px;">Remarks (Optional)</th>
+                                    <th style="width: 120px;">Student ID</th>
+                                    <th>Student Full Name</th>
+                                    <th style="width: 90px;">Gender</th>
+                                    <th style="width: 220px;" class="text-center">Attendance Status</th>
+                                    <th style="width: 260px;">Remarks / Note</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                <?php foreach ($eligibleStudents as $idx => $student): 
-                                    // Determine default status: if already recorded use recorded, else default to 'Present'
+                                <?php foreach ($eligibleStudents as $student): 
                                     $currentStatus = $student['attendance_status'] ?? 'Present';
                                     $currentRemarks = $student['remarks'] ?? '';
                                 ?>
                                     <tr class="attendance-student-row">
                                         <td>
-                                            <span class="badge badge-secondary" style="font-size: 13px; font-weight: 700;">
+                                            <span class="badge badge-secondary" style="font-size: 12px; font-weight: 700;">
                                                 <?= escape($student['roll_number']) ?>
                                             </span>
                                         </td>
-                                        <td><?= escape($student['student_code']) ?></td>
+                                        <td>
+                                            <span style="font-size: 12px; color: var(--text-muted); font-weight: 600;">
+                                                <?= escape($student['student_code']) ?>
+                                            </span>
+                                        </td>
                                         <td>
                                             <strong><?= escape($student['first_name'] . ' ' . $student['last_name']) ?></strong>
                                         </td>
                                         <td><?= escape($student['gender'] ?? '—') ?></td>
-                                        <td style="text-align: center;">
+                                        <td class="text-center">
                                             <div class="attendance-status-switch">
                                                 <label>
                                                     <input 
@@ -398,9 +409,9 @@ require_once __DIR__ . '/../includes/header.php';
                                                 type="text" 
                                                 name="remarks[<?= $student['student_id'] ?>]" 
                                                 class="form-control" 
-                                                placeholder="Remarks (e.g. Late, Medical)" 
+                                                placeholder="Optional remark (e.g. Late, Medical)" 
                                                 value="<?= escape($currentRemarks) ?>" 
-                                                style="padding: 6px 10px; font-size: 12.5px;"
+                                                style="height: 32px; font-size: 12px;"
                                             >
                                         </td>
                                     </tr>
@@ -409,11 +420,11 @@ require_once __DIR__ . '/../includes/header.php';
                         </table>
                     </div>
                 </div>
-                <div class="card-footer" style="padding: 16px 24px;">
-                    <div style="font-size: 12.5px; color: var(--text-muted);">
-                        🔒 Changes are saved via safe transactional database operations with audit logs.
+                <div class="card-footer" style="padding: 16px 20px;">
+                    <div style="font-size: 12px; color: var(--text-muted);">
+                        🔒 Changes are saved through an atomic database transaction.
                     </div>
-                    <button type="submit" class="btn btn-primary btn-lg" style="padding: 11px 32px; font-size: 14px;">
+                    <button type="submit" class="btn btn-primary btn-lg">
                         💾 Save Attendance Records
                     </button>
                 </div>
@@ -423,14 +434,13 @@ require_once __DIR__ . '/../includes/header.php';
     <?php endif; ?>
 
 <?php else: ?>
-    <!-- Initial Guide Card -->
     <div class="card">
         <div class="card-body">
             <div class="empty-state">
                 <div class="empty-state-icon">📋</div>
-                <div class="empty-state-title">Select Session to Mark Attendance</div>
+                <div class="empty-state-title">Select Date & Class Session Above</div>
                 <div class="empty-state-text">
-                    Select a date, department, section, and subject above, then click <strong>Load Eligible Students</strong> to begin marking attendance.
+                    Choose the date, department, section, and subject in the panel above, then click <strong>Load Eligible Students</strong> to generate the roll-call sheet.
                 </div>
             </div>
         </div>

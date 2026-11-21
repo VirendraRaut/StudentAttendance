@@ -188,6 +188,11 @@ $sectionsForFilter = $deptFilter > 0 ? get_sections_by_department($pdo, $deptFil
 require_once __DIR__ . '/../includes/header.php';
 ?>
 
+<!-- Page Header Block -->
+<div class="page-header-block">
+    <h1 class="page-title">Attendance History</h1>
+    <p class="page-subtitle">View, edit, and manage attendance logs with filters.</p>
+</div>
 <!-- Filter Card -->
 <div class="filter-card">
     <form method="GET" action="attendance-history.php" id="historyFilterForm">

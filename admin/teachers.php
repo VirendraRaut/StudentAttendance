@@ -1,11 +1,11 @@
 <?php
 
 /**
- * Teacher Management
+ * Teacher Management - Redesigned
  * Student Attendance Management System
  */
 
-$pageTitle = 'Teachers';
+$pageTitle = 'Faculty & Teachers';
 $currentPage = 'teachers';
 
 require_once __DIR__ . '/../config/config.php';
@@ -15,9 +15,18 @@ require_once __DIR__ . '/../includes/functions.php';
 
 require_admin_login();
 
+<!-- Page Header Block -->
+<div class="page-header-block">
+    <div>
+        <h2 class="page-title"><?= $pageTitle ?></h2>
+        <p class="page-subtitle">Manage teachers and their department assignments</p>
+    </div>
+</div>
+
 $action = $_GET['action'] ?? 'list';
 $editId = (int) ($_GET['id'] ?? 0);
 $editTeacher = null;
+$showForm = ($action === 'add' || $action === 'edit');
 
 // Search & Filter
 $search = trim($_GET['search'] ?? '');
@@ -43,15 +52,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $deptId    = (int) ($_POST['department_id'] ?? 0);
     $status    = $_POST['status'] ?? 'Active';
 
-    // Validation
     if (empty($code) || empty($firstName) || empty($lastName) || $deptId <= 0) {
         set_flash('danger', 'Teacher Code, First Name, Last Name, and Department are required.');
-        redirect($teacherId > 0 ? "admin/teachers.php?action=edit&id={$teacherId}" : "admin/teachers.php");
+        redirect($teacherId > 0 ? "admin/teachers.php?action=edit&id={$teacherId}" : "admin/teachers.php?action=add");
     }
 
     if (!empty($email) && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
         set_flash('danger', 'Please enter a valid email address.');
-        redirect($teacherId > 0 ? "admin/teachers.php?action=edit&id={$teacherId}" : "admin/teachers.php");
+        redirect($teacherId > 0 ? "admin/teachers.php?action=edit&id={$teacherId}" : "admin/teachers.php?action=add");
     }
 
     if (!in_array($status, ['Active', 'Inactive'])) {
@@ -60,7 +68,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     try {
         if ($teacherId > 0) {
-            // Check duplicate teacher code or email for other records
             $checkSql = "SELECT id FROM teachers WHERE (teacher_code = :code";
             $checkParams = [':code' => $code, ':id' => $teacherId];
             if (!empty($email)) {
@@ -76,7 +83,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 redirect("admin/teachers.php?action=edit&id={$teacherId}");
             }
 
-            // Update
             $updateStmt = $pdo->prepare(
                 "UPDATE teachers 
                  SET teacher_code = :code, first_name = :fname, last_name = :lname, 
@@ -96,7 +102,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             set_flash('success', "Teacher '{$firstName} {$lastName}' updated successfully.");
 
         } else {
-            // Check duplicate
             $checkSql = "SELECT id FROM teachers WHERE teacher_code = :code";
             $checkParams = [':code' => $code];
             if (!empty($email)) {
@@ -109,10 +114,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $checkStmt->execute($checkParams);
             if ($checkStmt->fetch()) {
                 set_flash('danger', 'A teacher with this Code or Email already exists.');
-                redirect("admin/teachers.php");
+                redirect("admin/teachers.php?action=add");
             }
 
-            // Insert
             $insertStmt = $pdo->prepare(
                 "INSERT INTO teachers (teacher_code, first_name, last_name, email, phone, department_id, status) 
                  VALUES (:code, :fname, :lname, :email, :phone, :dept_id, :status)"
@@ -126,7 +130,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':dept_id' => $deptId,
                 ':status'  => $status
             ]);
-            set_flash('success', "Teacher '{$firstName} {$lastName}' added successfully.");
+            set_flash('success', "Teacher '{$firstName} {$lastName}' registered successfully.");
         }
 
         redirect('admin/teachers.php');
@@ -146,16 +150,16 @@ if ($action === 'delete' && $editId > 0) {
         $hasAssignments = (int) $chkAssign->fetchColumn();
 
         if ($hasAssignments > 0) {
-            set_flash('danger', "Cannot delete this teacher because they are currently assigned to {$hasAssignments} subject/section(s). Please reassign or delete those assignments first.");
+            set_flash('danger', "Cannot delete faculty: Currently assigned to {$hasAssignments} course section(s). Reassign them first.");
         } else {
             $delStmt = $pdo->prepare("DELETE FROM teachers WHERE id = :id");
             $delStmt->execute([':id' => $editId]);
-            set_flash('success', 'Teacher deleted successfully.');
+            set_flash('success', 'Faculty record deleted successfully.');
         }
 
     } catch (PDOException $e) {
         error_log("Teacher delete error: " . $e->getMessage());
-        set_flash('danger', 'Unable to delete teacher. Foreign key constraints protect this record.');
+        set_flash('danger', 'Unable to delete teacher due to existing database dependencies.');
     }
     redirect('admin/teachers.php');
 }
@@ -208,7 +212,7 @@ $listSql = "SELECT t.*, d.department_code, d.department_name,
             FROM teachers t 
             JOIN departments d ON t.department_id = d.id 
             {$whereSql} 
-            ORDER BY t.first_name ASC, t.last_name ASC 
+            ORDER BY d.department_name ASC, t.first_name ASC, t.last_name ASC 
             LIMIT {$limit} OFFSET {$offset}";
 
 $listStmt = $pdo->prepare($listSql);
@@ -218,39 +222,51 @@ $teachers = $listStmt->fetchAll();
 require_once __DIR__ . '/../includes/header.php';
 ?>
 
-<div style="display: grid; grid-template-columns: <?= $editTeacher ? '1fr' : '360px 1fr' ?>; gap: 24px; align-items: start;">
-    
-    <!-- Add / Edit Teacher Card -->
-    <div class="card">
+<!-- 1. Page Header Block -->
+<div class="page-header-block">
+    <div>
+        <h2 class="page-title">Faculty & Teachers</h2>
+        <p class="page-subtitle">Directory of teaching staff, departmental instructors, and subject allocations</p>
+    </div>
+    <div class="page-header-actions">
+        <?php if (!$showForm): ?>
+            <a href="teachers.php?action=add" class="btn btn-primary">
+                ➕ Add Faculty Member
+            </a>
+        <?php endif; ?>
+    </div>
+</div>
+
+<!-- 2. Add / Edit Form Card -->
+<?php if ($showForm): ?>
+    <div class="card" style="border-left: 4px solid var(--primary); margin-bottom: 24px;">
         <div class="card-header">
             <div>
-                <h3 class="card-title"><?= $editTeacher ? 'Edit Teacher' : 'Add New Teacher' ?></h3>
-                <div class="card-subtitle"><?= $editTeacher ? 'Update faculty details' : 'Register a faculty member' ?></div>
+                <h3 class="card-title"><?= $editTeacher ? 'Edit Faculty Details' : 'Register New Faculty Member' ?></h3>
+                <div class="card-subtitle"><?= $editTeacher ? 'Update faculty credentials and department affiliation' : 'Fill in the contact and department information for the instructor' ?></div>
             </div>
-            <?php if ($editTeacher): ?>
-                <a href="teachers.php" class="btn btn-sm btn-outline">Cancel</a>
-            <?php endif; ?>
+            <a href="teachers.php" class="btn btn-sm btn-outline">✕ Cancel</a>
         </div>
         <div class="card-body">
             <form method="POST" action="teachers.php" autocomplete="off">
                 <?= csrf_input() ?>
                 <input type="hidden" name="teacher_id" value="<?= $editTeacher['id'] ?? 0 ?>">
 
-                <div class="form-group">
-                    <label class="form-label" for="teacher_code">Teacher Code <span class="required">*</span></label>
-                    <input 
-                        type="text" 
-                        id="teacher_code" 
-                        name="teacher_code" 
-                        class="form-control" 
-                        placeholder="e.g. TCH101" 
-                        maxlength="50" 
-                        required 
-                        value="<?= escape($editTeacher['teacher_code'] ?? '') ?>"
-                    >
-                </div>
+                <div class="form-grid-3">
+                    <div class="form-group">
+                        <label class="form-label" for="teacher_code">Teacher Code <span class="required">*</span></label>
+                        <input 
+                            type="text" 
+                            id="teacher_code" 
+                            name="teacher_code" 
+                            class="form-control" 
+                            placeholder="e.g. TCH101, FAC-CS" 
+                            maxlength="50" 
+                            required 
+                            value="<?= escape($editTeacher['teacher_code'] ?? '') ?>"
+                        >
+                    </div>
 
-                <div class="form-row">
                     <div class="form-group">
                         <label class="form-label" for="first_name">First Name <span class="required">*</span></label>
                         <input 
@@ -264,6 +280,7 @@ require_once __DIR__ . '/../includes/header.php';
                             value="<?= escape($editTeacher['first_name'] ?? '') ?>"
                         >
                     </div>
+
                     <div class="form-group">
                         <label class="form-label" for="last_name">Last Name <span class="required">*</span></label>
                         <input 
@@ -279,45 +296,47 @@ require_once __DIR__ . '/../includes/header.php';
                     </div>
                 </div>
 
-                <div class="form-group">
-                    <label class="form-label" for="department_id">Department <span class="required">*</span></label>
-                    <select id="department_id" name="department_id" class="form-select" required>
-                        <option value="">-- Select Department --</option>
-                        <?php foreach ($departments as $dept): ?>
-                            <option value="<?= $dept['id'] ?>" <?= ($editTeacher['department_id'] ?? $deptFilter) == $dept['id'] ? 'selected' : '' ?>>
-                                <?= escape($dept['department_name']) ?> (<?= escape($dept['department_code']) ?>)
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
+                <div class="form-grid-3">
+                    <div class="form-group">
+                        <label class="form-label" for="department_id">Department <span class="required">*</span></label>
+                        <select id="department_id" name="department_id" class="form-select" required>
+                            <option value="">-- Select Department --</option>
+                            <?php foreach ($departments as $dept): ?>
+                                <option value="<?= $dept['id'] ?>" <?= ($editTeacher['department_id'] ?? $deptFilter) == $dept['id'] ? 'selected' : '' ?>>
+                                    <?= escape($dept['department_name']) ?> (<?= escape($dept['department_code']) ?>)
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="email">Email Address</label>
+                        <input 
+                            type="email" 
+                            id="email" 
+                            name="email" 
+                            class="form-control" 
+                            placeholder="teacher@college.edu" 
+                            maxlength="150" 
+                            value="<?= escape($editTeacher['email'] ?? '') ?>"
+                        >
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="phone">Phone Number</label>
+                        <input 
+                            type="text" 
+                            id="phone" 
+                            name="phone" 
+                            class="form-control" 
+                            placeholder="+91 9876543210" 
+                            maxlength="20" 
+                            value="<?= escape($editTeacher['phone'] ?? '') ?>"
+                        >
+                    </div>
                 </div>
 
-                <div class="form-group">
-                    <label class="form-label" for="email">Email Address</label>
-                    <input 
-                        type="email" 
-                        id="email" 
-                        name="email" 
-                        class="form-control" 
-                        placeholder="teacher@college.edu" 
-                        maxlength="150" 
-                        value="<?= escape($editTeacher['email'] ?? '') ?>"
-                    >
-                </div>
-
-                <div class="form-group">
-                    <label class="form-label" for="phone">Phone Number</label>
-                    <input 
-                        type="text" 
-                        id="phone" 
-                        name="phone" 
-                        class="form-control" 
-                        placeholder="+91 9876543210" 
-                        maxlength="20" 
-                        value="<?= escape($editTeacher['phone'] ?? '') ?>"
-                    >
-                </div>
-
-                <div class="form-group">
+                <div class="form-group" style="max-width: 280px; margin-bottom: 20px;">
                     <label class="form-label" for="status">Status</label>
                     <select id="status" name="status" class="form-select">
                         <option value="Active" <?= ($editTeacher['status'] ?? 'Active') === 'Active' ? 'selected' : '' ?>>Active</option>
@@ -325,142 +344,154 @@ require_once __DIR__ . '/../includes/header.php';
                     </select>
                 </div>
 
-                <button type="submit" class="btn btn-primary" style="width: 100%;">
-                    <?= $editTeacher ? 'Update Teacher' : 'Save Teacher' ?>
-                </button>
+                <div style="display: flex; gap: 10px;">
+                    <button type="submit" class="btn btn-primary">
+                        <?= $editTeacher ? 'Save Changes' : 'Register Faculty' ?>
+                    </button>
+                    <a href="teachers.php" class="btn btn-secondary">Cancel</a>
+                </div>
             </form>
         </div>
     </div>
+<?php endif; ?>
 
-    <!-- Teachers List Card -->
-    <div class="card">
-        <div class="card-header">
-            <div>
-                <h3 class="card-title">All Faculty (<?= number_format($totalRows) ?>)</h3>
-                <div class="card-subtitle">Instructors and lecturers list</div>
-            </div>
+<!-- 3. Filter & Search Toolbar -->
+<div class="filter-toolbar">
+    <form method="GET" action="teachers.php">
+        <input 
+            type="text" 
+            name="search" 
+            class="form-control" 
+            placeholder="Search name, code, email..." 
+            value="<?= escape($search) ?>" 
+            style="max-width: 260px;"
+        >
+        <select name="department_id" class="form-select" style="max-width: 220px;">
+            <option value="">All Departments</option>
+            <?php foreach ($departments as $dept): ?>
+                <option value="<?= $dept['id'] ?>" <?= $deptFilter == $dept['id'] ? 'selected' : '' ?>>
+                    <?= escape($dept['department_code']) ?> - <?= escape($dept['department_name']) ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
+        <select name="status" class="form-select" style="max-width: 150px;">
+            <option value="">All Statuses</option>
+            <option value="Active" <?= $statusFilter === 'Active' ? 'selected' : '' ?>>Active Only</option>
+            <option value="Inactive" <?= $statusFilter === 'Inactive' ? 'selected' : '' ?>>Inactive Only</option>
+        </select>
+        <button type="submit" class="btn btn-secondary">Filter</button>
+        <?php if (!empty($search) || $deptFilter > 0 || !empty($statusFilter)): ?>
+            <a href="teachers.php" class="btn btn-outline">Reset</a>
+        <?php endif; ?>
+
+        <div style="margin-left: auto; font-size: 12.5px; color: var(--text-muted);">
+            Total: <strong><?= number_format($totalRows) ?></strong> faculty member<?= $totalRows === 1 ? '' : 's' ?>
         </div>
+    </form>
+</div>
 
-        <!-- Filter / Search Toolbar -->
-        <div style="padding: 16px 24px; border-bottom: 1px solid var(--border-color); background: #fafbfd;">
-            <form method="GET" action="teachers.php" class="filter-actions" style="margin: 0; display: flex; gap: 12px; flex-wrap: wrap;">
-                <input 
-                    type="text" 
-                    name="search" 
-                    class="form-control" 
-                    placeholder="Search name, code, email..." 
-                    value="<?= escape($search) ?>" 
-                    style="max-width: 240px;"
-                >
-                <select name="department_id" class="form-select" style="max-width: 200px;">
-                    <option value="">All Departments</option>
-                    <?php foreach ($departments as $dept): ?>
-                        <option value="<?= $dept['id'] ?>" <?= $deptFilter == $dept['id'] ? 'selected' : '' ?>>
-                            <?= escape($dept['department_code']) ?>
-                        </option>
-                    <?php endforeach; ?>
-                </select>
-                <select name="status" class="form-select" style="max-width: 140px;">
-                    <option value="">All Statuses</option>
-                    <option value="Active" <?= $statusFilter === 'Active' ? 'selected' : '' ?>>Active</option>
-                    <option value="Inactive" <?= $statusFilter === 'Inactive' ? 'selected' : '' ?>>Inactive</option>
-                </select>
-                <button type="submit" class="btn btn-secondary">Filter</button>
-                <?php if (!empty($search) || $deptFilter > 0 || !empty($statusFilter)): ?>
-                    <a href="teachers.php" class="btn btn-outline">Reset</a>
-                <?php endif; ?>
-            </form>
-        </div>
-
-        <div class="card-body" style="padding: 0;">
-            <div class="table-responsive">
-                <table class="table">
-                    <thead>
+<!-- 4. Data Table Card -->
+<div class="card">
+    <div class="card-body" style="padding: 0;">
+        <div class="table-responsive">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th style="width: 110px;">Code</th>
+                        <th>Faculty Name</th>
+                        <th>Department</th>
+                        <th>Contact Details</th>
+                        <th style="width: 130px;" class="text-center">Assigned Courses</th>
+                        <th style="width: 100px;" class="text-center">Status</th>
+                        <th style="width: 140px;" class="text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if (empty($teachers)): ?>
                         <tr>
-                            <th>Code</th>
-                            <th>Teacher Name</th>
-                            <th>Department</th>
-                            <th>Contact</th>
-                            <th>Assigned Classes</th>
-                            <th>Status</th>
-                            <th style="text-align: right;">Actions</th>
+                            <td colspan="7">
+                                <div class="empty-state">
+                                    <div class="empty-state-icon">👨‍🏫</div>
+                                    <div class="empty-state-title">No Faculty Found</div>
+                                    <div class="empty-state-text">No instructors match your search criteria, or none have been registered yet.</div>
+                                    <a href="teachers.php?action=add" class="btn btn-primary btn-sm">➕ Add Faculty Member</a>
+                                </div>
+                            </td>
                         </tr>
-                    </thead>
-                    <tbody>
-                        <?php if (empty($teachers)): ?>
+                    <?php else: ?>
+                        <?php foreach ($teachers as $tch): ?>
                             <tr>
-                                <td colspan="7">
-                                    <div class="empty-state">
-                                        <div class="empty-state-icon">👨‍🏫</div>
-                                        <div class="empty-state-title">No Faculty Found</div>
-                                        <div class="empty-state-text">Add teachers to assign them to subjects and class sections.</div>
-                                    </div>
+                                <td>
+                                    <span class="badge badge-secondary" style="font-weight: 700; font-size: 12px;">
+                                        <?= escape($tch['teacher_code']) ?>
+                                    </span>
                                 </td>
-                            </tr>
-                        <?php else: ?>
-                            <?php foreach ($teachers as $tch): ?>
-                                <tr>
-                                    <td><strong><?= escape($tch['teacher_code']) ?></strong></td>
-                                    <td>
-                                        <strong><?= escape($tch['first_name'] . ' ' . $tch['last_name']) ?></strong>
-                                    </td>
-                                    <td>
-                                        <span class="badge badge-secondary"><?= escape($tch['department_code']) ?></span>
-                                    </td>
-                                    <td style="font-size: 12px;">
-                                        <?php if (!empty($tch['email'])): ?>
-                                            <div>📧 <?= escape($tch['email']) ?></div>
-                                        <?php endif; ?>
-                                        <?php if (!empty($tch['phone'])): ?>
-                                            <div>📞 <?= escape($tch['phone']) ?></div>
-                                        <?php endif; ?>
-                                        <?php if (empty($tch['email']) && empty($tch['phone'])): ?>
-                                            <span style="color: var(--text-muted);">—</span>
-                                        <?php endif; ?>
-                                    </td>
-                                    <td><span class="badge badge-info"><?= number_format($tch['assigned_subjects_count']) ?> assigned</span></td>
-                                    <td><?= render_status_badge($tch['status']) ?></td>
-                                    <td style="text-align: right; white-space: nowrap;">
-                                        <a href="teachers.php?action=edit&id=<?= $tch['id'] ?>" class="btn btn-sm btn-outline">
+                                <td>
+                                    <strong><?= escape($tch['first_name'] . ' ' . $tch['last_name']) ?></strong>
+                                </td>
+                                <td>
+                                    <span class="badge badge-secondary"><?= escape($tch['department_code']) ?></span>
+                                    <span style="font-size: 12px; margin-left: 4px; color: var(--text-muted);"><?= escape($tch['department_name']) ?></span>
+                                </td>
+                                <td style="font-size: 12px;">
+                                    <?php if (!empty($tch['email'])): ?>
+                                        <div>📧 <?= escape($tch['email']) ?></div>
+                                    <?php endif; ?>
+                                    <?php if (!empty($tch['phone'])): ?>
+                                        <div style="color: var(--text-muted);">📞 <?= escape($tch['phone']) ?></div>
+                                    <?php endif; ?>
+                                    <?php if (empty($tch['email']) && empty($tch['phone'])): ?>
+                                        <span style="color: var(--text-muted);">—</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td class="text-center">
+                                    <span class="badge badge-info"><?= number_format($tch['assigned_subjects_count']) ?> courses</span>
+                                </td>
+                                <td class="text-center"><?= render_status_badge($tch['status']) ?></td>
+                                <td class="text-right">
+                                    <div class="table-actions">
+                                        <a href="teachers.php?action=edit&id=<?= $tch['id'] ?>" class="btn btn-sm btn-outline" title="Edit Faculty">
                                             ✏️ Edit
                                         </a>
                                         <button 
                                             type="button" 
                                             class="btn btn-sm btn-outline-danger" 
                                             onclick="confirmDelete('teachers.php?action=delete&id=<?= $tch['id'] ?>', 'teacher <?= escape($tch['first_name'] . ' ' . $tch['last_name']) ?>')"
+                                            title="Delete Faculty"
                                         >
                                             🗑️ Delete
                                         </button>
-                                    </td>
-                                </tr>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
-                    </tbody>
-                </table>
-            </div>
+                                    </div>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </tbody>
+            </table>
         </div>
-
-        <?php if ($totalPages > 1): ?>
-            <div class="card-footer">
-                <div style="font-size: 12px; color: var(--text-muted);">
-                    Showing <?= $offset + 1 ?> to <?= min($offset + $limit, $totalRows) ?> of <?= $totalRows ?> teachers
-                </div>
-                <ul class="pagination">
-                    <li class="page-item <?= $page <= 1 ? 'disabled' : '' ?>">
-                        <a class="page-link" href="?p=<?= $page - 1 ?>&search=<?= urlencode($search) ?>&department_id=<?= $deptFilter ?>&status=<?= urlencode($statusFilter) ?>">Prev</a>
-                    </li>
-                    <?php for ($i = 1; $i <= $totalPages; $i++): ?>
-                        <li class="page-item <?= $i === $page ? 'active' : '' ?>">
-                            <a class="page-link" href="?p=<?= $i ?>&search=<?= urlencode($search) ?>&department_id=<?= $deptFilter ?>&status=<?= urlencode($statusFilter) ?>"><?= $i ?></a>
-                        </li>
-                    <?php endfor; ?>
-                    <li class="page-item <?= $page >= $totalPages ? 'disabled' : '' ?>">
-                        <a class="page-link" href="?p=<?= $page + 1 ?>&search=<?= urlencode($search) ?>&department_id=<?= $deptFilter ?>&status=<?= urlencode($statusFilter) ?>">Next</a>
-                    </li>
-                </ul>
-            </div>
-        <?php endif; ?>
     </div>
+
+    <!-- 5. Pagination Footer -->
+    <?php if ($totalPages > 1): ?>
+        <div class="card-footer">
+            <div style="font-size: 12.5px; color: var(--text-muted);">
+                Showing <?= $offset + 1 ?> to <?= min($offset + $limit, $totalRows) ?> of <?= $totalRows ?> teachers
+            </div>
+            <ul class="pagination">
+                <li class="page-item <?= $page <= 1 ? 'disabled' : '' ?>">
+                    <a class="page-link" href="?p=<?= $page - 1 ?>&search=<?= urlencode($search) ?>&department_id=<?= $deptFilter ?>&status=<?= urlencode($statusFilter) ?>">Prev</a>
+                </li>
+                <?php for ($i = 1; $i <= $totalPages; $i++): ?>
+                    <li class="page-item <?= $i === $page ? 'active' : '' ?>">
+                        <a class="page-link" href="?p=<?= $i ?>&search=<?= urlencode($search) ?>&department_id=<?= $deptFilter ?>&status=<?= urlencode($statusFilter) ?>"><?= $i ?></a>
+                    </li>
+                <?php endfor; ?>
+                <li class="page-item <?= $page >= $totalPages ? 'disabled' : '' ?>">
+                    <a class="page-link" href="?p=<?= $page + 1 ?>&search=<?= urlencode($search) ?>&department_id=<?= $deptFilter ?>&status=<?= urlencode($statusFilter) ?>">Next</a>
+                </li>
+            </ul>
+        </div>
+    <?php endif; ?>
 </div>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
